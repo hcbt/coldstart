@@ -40,7 +40,7 @@ every consumer's deploy.
   comments that survive into the output, so a grep for `hostPort` matches the
   comment about host ports whether or not the field is there.
 - **A `select()` that matches nothing renders as `""`, not `null`.** `null` is
-  what an absent *field* renders as. Getting this backwards writes an assertion
+  what an absent _field_ renders as. Getting this backwards writes an assertion
   that passes no matter what the chart does.
 - **Linux-only checks are guarded by `pkgs.stdenv.hostPlatform.isLinux`.**
   dockerTools cannot build a Linux image from Darwin, so `image-evaluates`,

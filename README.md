@@ -36,17 +36,17 @@ Everything here is something a from-scratch Nix image is **missing** rather
 than something it gets wrong. Each absence is invisible at build time, invisible
 on inspection, invisible at startup — and costs a full deploy round-trip to find.
 
-| | Why |
-| --- | --- |
-| `/usr/bin/env` | The kernel resolves a shebang's interpreter path literally. Nix patches its own shebangs to store paths, so the absence stays hidden until the first script Nix did not touch tries to run — which is every vendor launcher ever shipped. |
-| `/etc/passwd` entry | Nix resolves the current user through `getpwuid`, not `$HOME`. With no entry for the pod's uid, every nix command fails with `cannot determine user's home directory`, and setting `HOME` does not help. |
-| Registered Nix DB | Without it the store paths are present but unregistered, and every nix command fails. `includeNixDB` costs reproducibility (`db.sqlite` embeds timestamps) and is usually worth it. |
-| A container-shaped `nix.conf` | The container is already the isolation boundary, and there are no build users inside it to hand a sandboxed build to. |
-| TLS roots | There is no `/etc/ssl` at all otherwise, and failures surface as opaque certificate errors. |
-| skopeo trust policy | skopeo refuses to do anything without one (`no policy.json file found`), and nixpkgs ships no default. Only with `withSkopeo`. |
+|                               | Why                                                                                                                                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/usr/bin/env`                | The kernel resolves a shebang's interpreter path literally. Nix patches its own shebangs to store paths, so the absence stays hidden until the first script Nix did not touch tries to run — which is every vendor launcher ever shipped. |
+| `/etc/passwd` entry           | Nix resolves the current user through `getpwuid`, not `$HOME`. With no entry for the pod's uid, every nix command fails with `cannot determine user's home directory`, and setting `HOME` does not help.                                  |
+| Registered Nix DB             | Without it the store paths are present but unregistered, and every nix command fails. `includeNixDB` costs reproducibility (`db.sqlite` embeds timestamps) and is usually worth it.                                                       |
+| A container-shaped `nix.conf` | The container is already the isolation boundary, and there are no build users inside it to hand a sandboxed build to.                                                                                                                     |
+| TLS roots                     | There is no `/etc/ssl` at all otherwise, and failures surface as opaque certificate errors.                                                                                                                                               |
+| skopeo trust policy           | skopeo refuses to do anything without one (`no policy.json file found`), and nixpkgs ships no default. Only with `withSkopeo`.                                                                                                            |
 
 `withNix = false` drops Nix and its ~200M of closure — right for a workload
-that only ever *runs*, wrong for anything calling `nix build` itself.
+that only ever _runs_, wrong for anything calling `nix build` itself.
 
 ## The chart
 
@@ -67,7 +67,7 @@ The ones worth knowing before you start:
 - **`nixStore.enabled` is off by default.** An image built by `mkImage` already
   carries its whole closure at `/nix`, read-only, which is all a workload needs
   in order to run. Turn it on only for a container that builds derivations of
-  its own — it seeds a *writable* store from the image with two initContainers.
+  its own — it seeds a _writable_ store from the image with two initContainers.
 - **`persistence` is a real PVC**, because unlike the Nix store it is not
   re-derivable. It is chowned to the workload's uid by an initContainer, since
   a fresh PVC arrives root-owned and the workload is not root.
