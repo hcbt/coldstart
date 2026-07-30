@@ -1,0 +1,34 @@
+{{- if .Values.imageUpdater.rbac.enabled }}
+# Lets argocd-image-updater read this namespace's registry pull secret, which it
+# needs to query the registry for new tags. Without it the controller logs
+# `secrets "…" is forbidden` and silently never updates the image.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "coldstart.fullname" . }}-image-updater-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - {{ .Values.imageUpdater.rbac.pullSecretName | quote }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "coldstart.fullname" . }}-image-updater-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.imageUpdater.rbac.serviceAccountName | quote }}
+    namespace: {{ .Values.imageUpdater.rbac.serviceAccountNamespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "coldstart.fullname" . }}-image-updater-secret-reader
+{{- end }}

@@ -1,0 +1,245 @@
+{{- if not .Values.image.repository }}
+{{- fail "coldstart: .Values.image.repository is unset — build an image with coldstart.lib.mkImage and point this at it" }}
+{{- end }}
+{{- if not (has .Values.kind (list "Deployment" "StatefulSet")) }}
+{{- fail (printf "coldstart: .Values.kind must be Deployment or StatefulSet, got %q" .Values.kind) }}
+{{- end }}
+{{- $img := include "coldstart.image" . }}
+{{- $isSts := eq .Values.kind "StatefulSet" }}
+{{- /*
+A StatefulSet provisions one volume per replica, so it can scale with state. A
+Deployment cannot: every replica would mount the same ReadWriteOnce claim and
+all but one would sit Pending on a Multi-Attach error. Refuse rather than
+render that.
+*/ -}}
+{{- if and (not $isSts) (gt (int .Values.replicas) 1) .Values.persistence.enabled }}
+{{- fail "coldstart: replicas > 1 with persistence.enabled requires kind: StatefulSet — a Deployment's replicas would all contend for one ReadWriteOnce claim" }}
+{{- end }}
+apiVersion: apps/v1
+kind: {{ .Values.kind }}
+metadata:
+  name: {{ include "coldstart.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  {{- if $isSts }}
+  serviceName: {{ include "coldstart.fullname" . }}
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  {{- else }}
+  strategy:
+    type: {{ .Values.strategy }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "coldstart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "coldstart.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- $needsInit := or .Values.nixStore.enabled (and .Values.persistence.enabled .Values.chownPersistence) }}
+      {{- if or $needsInit .Values.extraInitContainers }}
+      initContainers:
+        {{- if .Values.nixStore.enabled }}
+        # Seed the store from the image's own /nix. Mounted at /mnt/nix here so
+        # the image's store stays visible to copy FROM; every later container
+        # mounts the same volume over /nix.
+        #
+        # Runs as root: parts of the store are root-owned mode 600
+        # (/nix/var/nix/db/big-lock, reserved) and an unprivileged copy cannot
+        # even read them, so cp exits non-zero and the pod crashloops.
+        #
+        # `-n` so a restart onto a populated volume is a no-op rather than a
+        # full re-copy.
+        - name: seed-nix-store
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command: ["/bin/cp"]
+          args: ["-dRn", "/nix/.", "/mnt/nix/"]
+          volumeMounts:
+            - name: nix-store
+              mountPath: /mnt/nix
+        # Root copied them, so hand the store to the user the workload runs as.
+        # This — not fsGroup — is what makes the store usable: fsGroup only
+        # touches the volume root, not the modes on the files cp created under
+        # it. See the podSecurityContext comment in values.yaml.
+        #
+        # `chmod g-s` on the root is belt and braces against that same failure:
+        # setgid only propagates from a directory's immediate parent, so a clean
+        # root keeps every build directory nix later creates clean too.
+        - name: chown-nix-store
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command: ["/bin/sh"]
+          args:
+            - "-c"
+            - {{ printf "chown -R %v:%v /mnt/nix && chmod g-s /mnt/nix" .Values.podSecurityContext.runAsUser .Values.podSecurityContext.runAsGroup | quote }}
+          volumeMounts:
+            - name: nix-store
+              mountPath: /mnt/nix
+        {{- end }}
+        {{- if and .Values.persistence.enabled .Values.chownPersistence }}
+        # A freshly provisioned PVC arrives root-owned mode 755, so an
+        # unprivileged workload cannot write to it. The failure surfaces as the
+        # workload complaining about its own data directory, not as a
+        # permissions error, so this runs unconditionally rather than being
+        # something to discover.
+        - name: chown-data
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command: ["/bin/sh"]
+          args:
+            - "-c"
+            - {{ printf "chown -R %v:%v %s" .Values.podSecurityContext.runAsUser .Values.podSecurityContext.runAsGroup .Values.persistence.mountPath | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+        {{- end }}
+        {{- with .Values.extraInitContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ include "coldstart.name" . }}
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.ports }}
+          ports:
+            {{- range .Values.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ default "TCP" .protocol }}
+              {{- if $.Values.hostPort.enabled }}
+              hostPort: {{ .containerPort }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- include "coldstart.volumeMounts" . | nindent 12 }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.nixStore.enabled }}
+        - name: nix-store
+          {{- if .Values.nixStore.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.nixStore.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.nixStore.sizeLimit }}
+          {{- end }}
+        {{- end }}
+        {{- if and .Values.persistence.enabled (not (and $isSts (not .Values.persistence.existingClaim))) }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "coldstart.persistenceClaim" . }}
+        {{- end }}
+        {{- if .Values.nss.enabled }}
+        - name: nss
+          configMap:
+            name: {{ include "coldstart.fullname" . }}-nss
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if and $isSts .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+  # One volume per replica, which is the only reason to have chosen a
+  # StatefulSet over a Deployment here.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+  {{- end }}

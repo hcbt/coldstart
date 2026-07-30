@@ -1,0 +1,14 @@
+apiVersion: v2
+name: coldstart
+description: Run a Nix-built OCI image on Kubernetes — one workload, its state, and the pieces a from-scratch Nix image needs to work in a pod
+type: application
+version: 0.1.0
+# The workload's version is whatever the image was built with, so there is no
+# single appVersion to pin here.
+appVersion: "0.1.0"
+keywords:
+  - nix
+  - oci
+  - container
+sources:
+  - https://github.com/hcbt/coldstart

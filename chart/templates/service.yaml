@@ -1,0 +1,40 @@
+{{- if .Values.service.enabled }}
+{{- $ports := default .Values.ports .Values.service.ports }}
+{{- if not $ports }}
+{{- fail "coldstart: service.enabled is set but neither .Values.ports nor .Values.service.ports lists a port" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coldstart.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.externalTrafficPolicy }}
+  {{- /*
+  Only NodePort and LoadBalancer have an external traffic policy; setting it on
+  a ClusterIP Service is rejected by the API server.
+  */ -}}
+  {{- if has $.Values.service.type (list "NodePort" "LoadBalancer") }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- end }}
+  selector:
+    {{- include "coldstart.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- range $ports }}
+    - name: {{ .name }}
+      port: {{ default .containerPort .port }}
+      targetPort: {{ .name }}
+      protocol: {{ default "TCP" .protocol }}
+      {{- with .nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+    {{- end }}
+{{- end }}

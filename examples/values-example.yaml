@@ -1,0 +1,56 @@
+# A worked example: a UDP game server with a save volume, bound on the node.
+#
+# `nix flake check` renders this and asserts on the result, so it is tested
+# documentation rather than a snippet that drifts.
+image:
+  repository: ghcr.io/OWNER/my-server
+  tag: latest
+
+imagePullSecrets:
+  - ghcr-credentials
+
+command: ["/bin/my-server"]
+args: ["--config", "/data/server.ini"]
+
+ports:
+  - name: game
+    containerPort: 16261
+    protocol: UDP
+  - name: direct
+    containerPort: 16262
+    protocol: UDP
+
+# Single-node cluster: bind on the host rather than routing through a Service,
+# so the client's source address survives.
+hostPort:
+  enabled: true
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 20Gi
+
+env:
+  - name: SERVER_NAME
+    value: example
+  - name: ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-server-secrets
+        key: admin-password
+
+onePasswordItems:
+  - name: my-server-secrets
+    itemPath: vaults/VAULT/items/my-server
+
+resources:
+  requests:
+    memory: 2Gi
+    cpu: "1"
+  limits:
+    memory: 8Gi
+    cpu: "4"
+
+# A save flush takes longer than the 30s default, and being SIGKILLed
+# mid-write is how a world file gets corrupted.
+terminationGracePeriodSeconds: 120

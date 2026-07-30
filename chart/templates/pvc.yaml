@@ -1,0 +1,28 @@
+{{- /*
+Only for a Deployment. A StatefulSet declares its storage as
+volumeClaimTemplates instead, so that it gets one volume per replica — see
+workload.yaml. An existing claim means the cluster provisioned it and the chart
+must not own it.
+*/ -}}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) (ne .Values.kind "StatefulSet") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "coldstart.persistenceClaim" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+  {{- with .Values.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+{{- end }}

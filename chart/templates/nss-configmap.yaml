@@ -1,0 +1,16 @@
+{{- if .Values.nss.enabled }}
+# /etc/passwd and /etc/group for the workload container. See the `nss` comment
+# in values.yaml for why this exists even when the image already ships them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coldstart.fullname" . }}-nss
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coldstart.labels" . | nindent 4 }}
+data:
+  passwd: |
+    {{- .Values.nss.passwd | nindent 4 }}
+  group: |
+    {{- .Values.nss.group | nindent 4 }}
+{{- end }}

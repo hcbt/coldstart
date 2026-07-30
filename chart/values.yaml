@@ -1,0 +1,243 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # Build your own with `coldstart.lib.mkImage` and push it somewhere your
+  # cluster can pull from — there is no published default image, because the
+  # useful part of a Nix image is the workload YOU put in it.
+  repository: ""
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Names of pull secrets that already exist in the release namespace.
+imagePullSecrets: []
+
+# Deployment or StatefulSet.
+#
+# StatefulSet only for a workload whose identity outlives the pod — one that
+# needs a stable hostname, or a volume provisioned per replica. A single
+# stateful replica on one PVC does NOT need it: a Deployment with
+# `strategy: Recreate` gives the same guarantee with less machinery, and is the
+# default for that reason.
+kind: Deployment
+replicas: 1
+
+# Recreate, not RollingUpdate. The default rollout starts the new pod before
+# the old one is gone, and two pods cannot hold the same ReadWriteOnce volume —
+# the new one sits Pending on a "Multi-Attach" error until the rollout times
+# out. Only change this for a workload with no exclusive state.
+strategy: Recreate
+
+# The container's command and arguments. Left empty, the image's own
+# Entrypoint/Cmd is used, which is the right thing when `mkImage` declared one.
+command: []
+args: []
+
+# Environment, as a list of k8s EnvVar — so `valueFrom` works, not just
+# literals.
+env: []
+# - name: SERVER_NAME
+#   value: my-server
+# - name: ADMIN_PASSWORD
+#   valueFrom:
+#     secretKeyRef:
+#       name: my-secrets
+#       key: admin-password
+
+# Whole ConfigMaps/Secrets projected into the environment.
+envFrom: []
+
+# Ports the container listens on. Also what `service` publishes by default, and
+# what the chart's own readiness probe can point at.
+ports: []
+# - name: game
+#   containerPort: 16261
+#   protocol: UDP
+
+service:
+  # Off by default: plenty of workloads (a CI runner, a queue consumer) dial
+  # out and are never dialled into, and a Service for those is dead weight that
+  # still consumes a cluster IP.
+  enabled: false
+  # NodePort or LoadBalancer for anything that must be reachable from outside
+  # the cluster. A UDP game server on a single-node cluster is usually
+  # NodePort with `hostPort` set below instead.
+  type: ClusterIP
+  annotations: {}
+  # Defaults to `ports` above. Set explicitly to publish a subset, or to map a
+  # different port number than the container listens on.
+  ports: []
+  # externalTrafficPolicy: Local preserves the client source address, which
+  # matters for game servers that ban or rate-limit by IP. It also means only
+  # nodes actually running the pod answer.
+  externalTrafficPolicy: ""
+
+# Bind the container's ports directly on the node. The blunt instrument, and
+# for a single-node cluster serving UDP it is usually the right one: a NodePort
+# Service rewrites the source address unless externalTrafficPolicy is Local,
+# and a LoadBalancer needs an implementation the cluster may not have.
+#
+# Every port in `ports` is bound on the host at the same number.
+hostPort:
+  enabled: false
+
+# The Nix store as a WRITABLE volume, seeded from the image.
+#
+# Off by default, and most workloads should leave it off: an image built by
+# `mkImage` already carries its whole closure at /nix, read-only, and that is
+# all a workload needs in order to RUN. Turn this on only when the container
+# builds or realises derivations of its own — a CI runner, or anything calling
+# `nix build` — because that needs a store it can write to.
+#
+# When on, two initContainers copy the image's /nix onto the volume and hand it
+# to the workload's uid; see the deployment template for why both are needed
+# and why neither can be replaced by fsGroup.
+nixStore:
+  enabled: false
+  mountPath: /nix
+  # An upper bound, not a reservation: nothing is provisioned up front and the
+  # space returns to the node when the pod restarts. The store is a CACHE —
+  # every path is either seeded from the image or re-derivable — so an emptyDir
+  # is the right default and a PVC only ever grows.
+  sizeLimit: 15Gi
+  # Set to keep the store across pod restarts instead; expect it to need
+  # periodic `nix store gc`.
+  existingClaim: ""
+
+# The workload's own state: saves, databases, uploads. Unlike the Nix store
+# this is NOT re-derivable, so the default when enabled is a real PVC.
+persistence:
+  enabled: false
+  mountPath: /data
+  # Use a claim that already exists rather than letting the chart create one.
+  existingClaim: ""
+  size: 10Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  # Kept when the release is deleted. Helm does not delete PVCs it created
+  # anyway, but a StatefulSet's volumeClaimTemplates are a different code path,
+  # so this is stated rather than assumed.
+  annotations:
+    helm.sh/resource-policy: keep
+
+# Extra volumes and mounts, for anything the options above do not cover.
+extraVolumes: []
+extraVolumeMounts: []
+
+# Raw containers and initContainers, merged into the pod as written.
+extraContainers: []
+extraInitContainers: []
+
+# /etc/passwd and /etc/group for the container.
+#
+# Nix resolves the current user through getpwuid, not $HOME, so with no entry
+# for the uid the pod runs as, every nix command fails with "error: cannot
+# determine user's home directory" — setting HOME explicitly does not help. A
+# good deal of non-Nix software fails the same way, more quietly.
+#
+# Images built by `lib.mkImage` already carry the entry, but that fix cannot
+# always deploy itself: if building a new image requires the very cluster that
+# is broken, mounting the file here is what breaks the cycle. Off by default
+# because the image is normally enough.
+nss:
+  enabled: false
+  passwd: |
+    root:x:0:0:root user:/var/empty:/bin/sh
+    app:x:1000:1000:app:/app:/bin/bash
+    nobody:x:65534:65534:nobody:/var/empty:/bin/sh
+  group: |
+    root:x:0:
+    app:x:1000:
+    nobody:x:65534:
+
+# The workload runs unprivileged: some tooling (postgres' initdb, for one)
+# refuses to run as root. Must match the uid/gid the image declares in
+# /etc/passwd.
+#
+# Deliberately NO fsGroup by default. Setting one makes kubelet mark the volume
+# root setgid, and a setgid directory is inherited by every directory created
+# beneath it — including nix's build directory and everything a source archive
+# unpacks into. unpackPhase then runs `chmod -R u+w`, which re-applies a mode
+# still carrying S_ISGID, and nix's own seccomp filter (`filter-syscalls`, on by
+# default, there to keep setuid/setgid binaries out of the store) denies exactly
+# that call:
+#
+#   chmod: changing permissions of '…': Operation not permitted
+#
+# Every derivation with an unpack phase fails that way, which does not look like
+# a permissions problem in the log. For a workload that never builds anything,
+# an fsGroup is harmless and is how you get a writable PVC without an init
+# container — set it deliberately, knowing the above.
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+
+# Applied to the workload container itself, not the pod.
+securityContext: {}
+
+# An initContainer that chowns the persistent volume to the workload's uid.
+# A freshly provisioned PVC is root-owned mode 755, so an unprivileged workload
+# cannot write to it and fails on first start — usually with a message about
+# its own data directory rather than about permissions.
+#
+# The alternative is `podSecurityContext.fsGroup`; read the warning above
+# before reaching for it.
+chownPersistence: true
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 4Gi
+    cpu: "2"
+
+# Probes. Both off by default: a wrong liveness probe is strictly worse than
+# none, since it restarts a working pod on a schedule.
+livenessProbe: {}
+readinessProbe: {}
+startupProbe: {}
+
+# Extra pod-level settings.
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+terminationGracePeriodSeconds: 30
+# A game server flushing a save, or a build finishing, wants longer than the
+# 30s default. Set it there rather than here when so.
+
+# The chart creates its own namespace only when asked; GitOps controllers
+# usually do this themselves (ArgoCD's CreateNamespace=true).
+#
+# But if a previous revision of the Application DID own the Namespace, leaving
+# this false makes ArgoCD prune it on the next sync — taking the workload and
+# every secret in it. CreateNamespace=true does not save you: it recreates the
+# namespace only after prune has torn it down.
+namespace:
+  create: false
+
+# Optional convenience for clusters running the 1Password Kubernetes operator:
+# render OnePasswordItems that sync vault items into Secrets, which `env` can
+# then reference with `valueFrom.secretKeyRef`. Every field of the item becomes
+# a key of the Secret.
+#
+# Any other way of producing those Secrets works just as well — this is a
+# convenience, not a dependency. Until the item exists the operator does not
+# create the Secret and the pod stays Pending on the missing reference.
+onePasswordItems: []
+# - name: my-secrets
+#   itemPath: vaults/VAULT/items/ITEM
+
+# argocd-image-updater needs to read this namespace's pull secret to query the
+# registry for new tags. Without the Role it logs `secrets "…" is forbidden` and
+# silently never updates the image.
+imageUpdater:
+  rbac:
+    enabled: false
+    pullSecretName: ghcr-credentials
+    serviceAccountName: argocd-image-updater
+    serviceAccountNamespace: argocd
