@@ -37,4 +37,33 @@ in
       default = [ { type = "insecureAcceptAnything"; } ];
     }
   );
+
+  # The CA bundle under the names the rest of the world compiled into its
+  # binaries.
+  #
+  # `pkgs.cacert` ships exactly one bundle, at
+  # /etc/ssl/certs/ca-bundle.crt, and Nix-built software finds it because
+  # $SSL_CERT_FILE points there. A VENDORED binary does not read that variable:
+  # it links its own OpenSSL, which falls back to the path it was compiled
+  # with — /etc/ssl/certs/ca-certificates.crt on Debian and most builds,
+  # /etc/pki/tls/certs/ca-bundle.crt on RHEL, /etc/ssl/cert.pem for stock
+  # OpenSSL. None of those exist in a from-scratch Nix image.
+  #
+  # So TLS silently has no roots, and the failure surfaces nowhere near the
+  # cause — Steam's client, for one, logs
+  #
+  #   opensslconnection.cpp (1636) : unable to load trusted SSL root certificates
+  #
+  # and then simply never reaches its master servers, while the process itself
+  # keeps running and looks healthy.
+  #
+  # Symlinks to the bundle already in the image, so this adds no closure.
+  caCertCompat = pkgs.runCommand "ca-cert-compat" { } ''
+    mkdir -p $out/etc/ssl/certs $out/etc/pki/tls/certs
+    bundle=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+
+    ln -s "$bundle" $out/etc/ssl/certs/ca-certificates.crt
+    ln -s "$bundle" $out/etc/ssl/cert.pem
+    ln -s "$bundle" $out/etc/pki/tls/certs/ca-bundle.crt
+  '';
 }

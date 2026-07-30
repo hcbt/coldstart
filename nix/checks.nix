@@ -339,6 +339,43 @@
               touch $out
             '';
 
+        # A vendored binary's own OpenSSL reads a compiled-in path, not
+        # $SSL_CERT_FILE, so the bundle has to exist under the conventional
+        # names. `pkgs.cacert` ships only ca-bundle.crt.
+        #
+        # Existence alone is not the test: `test -e` passes for a link to a
+        # directory and `test -s` for a truncated file, and either would leave
+        # TLS with no roots. So each path is RESOLVED and then PARSED — a
+        # dangling symlink fails the grep, a truncated bundle fails the count,
+        # and anything that is not PEM fails openssl.
+        ca-certificates-compat =
+          pkgs.runCommand "ca-certificates-compat"
+            {
+              nativeBuildInputs = [ pkgs.openssl ];
+            }
+            ''
+              fail() { echo "FAIL: $*" >&2; exit 1; }
+              root=${shims.caCertCompat}
+
+              for p in \
+                etc/ssl/certs/ca-certificates.crt \
+                etc/ssl/cert.pem \
+                etc/pki/tls/certs/ca-bundle.crt
+              do
+                # -e follows symlinks, so a dangling link is caught here rather
+                # than by a TLS handshake months later.
+                [ -e "$root/$p" ] || fail "$p is missing or dangling"
+
+                n=$(grep -c 'BEGIN CERTIFICATE' "$root/$p" || true)
+                [ "$n" -gt 50 ] || fail "$p holds $n certificates, so it is not the full bundle"
+
+                openssl x509 -in "$root/$p" -noout -subject > /dev/null 2>&1 \
+                  || fail "$p is not parseable as PEM"
+              done
+
+              touch $out
+            '';
+
         # `flakeModules.default` is what the README leads with, and nothing else
         # here evaluates it — `checks.image-evaluates` calls image.nix directly
         # and bypasses the module entirely. Evaluation IS the test: a broken

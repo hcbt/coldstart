@@ -163,6 +163,9 @@ let
   // lib.optionalAttrs withCacert {
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    # For anything that honours the directory rather than the file. A vendored
+    # binary that reads neither is covered by `shims.caCertCompat` instead.
+    SSL_CERT_DIR = "/etc/ssl/certs";
   }
   // lib.optionalAttrs withSkopeo {
     # skopeo stores credentials under $XDG_RUNTIME_DIR (or /run/containers/$UID
@@ -209,7 +212,12 @@ pkgs.dockerTools.buildLayeredImage {
         extraGroupLines = [ "${u.name}:x:${toString u.gid}:" ];
       })
     ]
-    ++ lib.optionals withCacert [ pkgs.cacert ]
+    # The bundle, plus the conventional paths a vendored binary's own OpenSSL
+    # was compiled to look for — see image-shims.nix.
+    ++ lib.optionals withCacert [
+      pkgs.cacert
+      shims.caCertCompat
+    ]
     ++ lib.optionals withNix [
       pkgs.nix
       nixConf
