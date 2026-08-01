@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/hcbt/coldstart/compare/v0.3.0...v0.3.1) (2026-08-01)
+
+
+### Fixed
+
+* **deps:** bump nivis to v0.8.2, and drop the local treefmt exclusion ([#8](https://github.com/hcbt/coldstart/issues/8)) ([de68e08](https://github.com/hcbt/coldstart/commit/de68e0835e0e10392abc6fdc924e51a74f7d86ae))
+
 ## [0.3.0](https://github.com/hcbt/coldstart/compare/v0.2.1...v0.3.0) (2026-08-01)
 
 
