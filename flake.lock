@@ -115,16 +115,16 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1785418444,
-        "narHash": "sha256-Ico5bkkWeoITggLflhV7mKfv35jJ5IF5nLX4Jruynmw=",
+        "lastModified": 1785569400,
+        "narHash": "sha256-bEJMvK3p7+5GH8sNHH827+rhmdW9UvoRmEUvJIR+7As=",
         "owner": "hcbt",
         "repo": "nivis",
-        "rev": "40bcb4c29ce8edaccacd60bdb55532410ba1b7ea",
+        "rev": "967b60a961efafb2792c121a4982369dad279098",
         "type": "github"
       },
       "original": {
         "owner": "hcbt",
-        "ref": "v0.7.1",
+        "ref": "v0.8.1",
         "repo": "nivis",
         "type": "github"
       }
