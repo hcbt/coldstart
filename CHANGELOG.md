@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/hcbt/coldstart/compare/v0.3.1...v0.3.2) (2026-08-01)
+
+
+### Fixed
+
+* **shell:** define the dev shell in flake.nix instead of nix/shells.nix ([#10](https://github.com/hcbt/coldstart/issues/10)) ([717602f](https://github.com/hcbt/coldstart/commit/717602f7be80e2ad54b5219ddb0f643621a6e5a8))
+
 ## [0.3.1](https://github.com/hcbt/coldstart/compare/v0.3.0...v0.3.1) (2026-08-01)
 
 
