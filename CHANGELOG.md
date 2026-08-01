@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/hcbt/coldstart/compare/v0.2.1...v0.3.0) (2026-08-01)
+
+
+### Added
+
+* **chart:** let consumers add labels to the rendered Namespace ([#5](https://github.com/hcbt/coldstart/issues/5)) ([51e1db0](https://github.com/hcbt/coldstart/commit/51e1db0620ce79fd5744e296939ed6b6b6fc8aa9))
+
 ## [0.2.1](https://github.com/hcbt/coldstart/compare/v0.2.0...v0.2.1) (2026-07-30)
 
 
