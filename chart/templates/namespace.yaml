@@ -5,4 +5,7 @@ metadata:
   name: {{ .Release.Namespace }}
   labels:
     {{- include "coldstart.labels" . | nindent 4 }}
+    {{- with .Values.namespace.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
