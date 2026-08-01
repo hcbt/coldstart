@@ -37,7 +37,30 @@
         ./nix/lib.nix # flake.lib.*, flakeModules.default, nixosModules.default
         ./nix/packages.nix # the reference image + the packaged chart
         ./nix/checks.nix # chart lint + render assertions, image evaluation
-        ./nix/shells.nix # `nix develop`
+        # The dev shell, inline rather than imported from nix/shells.nix:
+        # editor Nix integrations that read flake.nix textually cannot see a
+        # devShell defined in an imported module, even though the flake output
+        # is identical either way.
+        (
+          # `nix develop` / direnv. nivis' mkDevShell brings prek, the treefmt wrapper,
+          # the pinned shell utilities and the pre-commit devShell fragment; only the
+          # chart tooling is specific to this repo.
+          { ... }:
+          {
+            perSystem =
+              { pkgs, mkDevShell, ... }:
+              {
+                devShells.default = mkDevShell {
+                  packages = [
+                    pkgs.kubernetes-helm
+                    pkgs.kubectl
+                    pkgs.kubeconform
+                    pkgs.yq-go
+                  ];
+                };
+              };
+          }
+        )
         ./nix/format.nix # the repo-specific half of treefmt and the hooks
       ];
     };
