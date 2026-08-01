@@ -5,6 +5,10 @@
 {
   perSystem = {
     treefmt.settings.global.excludes = [
+      # Source for `repo.extraFiles`. The generated copies under
+      # `.github/workflows/` are already excluded; formatting the source
+      # would leave the two permanently unequal.
+      "nix/ci/**"
       "LICENSE"
       # Helm templates are Go-templated YAML; prettier cannot parse `{{ … }}`.
       "chart/templates/*"
