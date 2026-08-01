@@ -225,7 +225,7 @@ namespace:
   # This exists for Pod Security Admission. `pod-security.kubernetes.io/enforce`
   # has to sit on the Namespace object, so when this chart renders the Namespace
   # the consumer has nowhere else to put it.
-  labels: { }
+  labels: {}
 
 # Optional convenience for clusters running the 1Password Kubernetes operator:
 # render OnePasswordItems that sync vault items into Secrets, which `env` can
