@@ -105,7 +105,15 @@
         default = devenv.lib.mkShell {
           inherit inputs;
           pkgs = devenvPkgsFor.${system};
-          modules = [ ./devenv.nix ];
+          modules = [
+            (import ./devenv.nix {
+              pkgs = devenvPkgsFor.${system};
+              # Same set as `pkgs` here. The split only matters in
+              # `checks.pre-commit`, which builds from this flake's nixpkgs and
+              # borrows only the tools.
+              toolPkgs = devenvPkgsFor.${system};
+            })
+          ];
         };
       });
     };
