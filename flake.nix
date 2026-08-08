@@ -86,7 +86,12 @@
           pre-commit = git-hooks.lib.${system}.run {
             src = ./.;
             package = devenvPkgsFor.${system}.prek;
-            inherit ((import ./devenv.nix { pkgs = devenvPkgsFor.${system}; }).git-hooks)
+            inherit
+              ((import ./devenv.nix {
+                pkgs = nixpkgs.legacyPackages.${system};
+                toolPkgs = devenvPkgsFor.${system};
+              }).git-hooks
+              )
               hooks
               excludes
               ;
