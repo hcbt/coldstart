@@ -5,7 +5,7 @@
 #   inputs.coldstart.lib.chart            the chart source, for ArgoCD/helm
 #   inputs.coldstart.flakeModules.default typed options instead of the raw call
 #   inputs.coldstart.nixosModules.default the systemd-nspawn container
-{ lib, ... }:
+{ lib }:
 let
   mkImage = args: import ./image.nix args;
   chart = ../chart;
@@ -41,12 +41,14 @@ let
       '';
 in
 {
-  flake = {
-    lib = {
-      inherit mkImage renderChart chart;
-    };
-
-    flakeModules.default = import ./flake-module.nix;
-    nixosModules.default = import ./nixos-module.nix;
+  lib = {
+    inherit mkImage renderChart chart;
   };
+
+  # Still exported, even though this flake no longer runs flake-parts itself.
+  # It is a file reference, so publishing it costs nothing — and a consumer that
+  # does run flake-parts can still take the typed options instead of calling
+  # `lib.mkImage` by hand.
+  flakeModules.default = import ./flake-module.nix;
+  nixosModules.default = import ./nixos-module.nix;
 }
