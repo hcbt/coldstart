@@ -54,6 +54,8 @@
 
       # devenv's own package set. The shell is built from it, so the hooks check
       # must be too, or a developer's shell and CI run different binaries.
+      flakePkgsFor = forEachSystem (system: nixpkgs.legacyPackages.${system});
+
       devenvPkgsFor = forEachSystem (system: import devenv.inputs.nixpkgs { inherit system; });
     in
     # The public surface: `lib.mkImage`, `lib.renderChart`, `lib.chart`,
@@ -89,7 +91,7 @@
             inherit
               ((import ./devenv.nix {
                 pkgs = nixpkgs.legacyPackages.${system};
-                toolPkgs = devenvPkgsFor.${system};
+                toolPkgs = flakePkgsFor.${system};
               }).git-hooks
               )
               hooks
@@ -111,7 +113,7 @@
               # Same set as `pkgs` here. The split only matters in
               # `checks.pre-commit`, which builds from this flake's nixpkgs and
               # borrows only the tools.
-              toolPkgs = devenvPkgsFor.${system};
+              toolPkgs = flakePkgsFor.${system};
             })
           ];
         };
