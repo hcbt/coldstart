@@ -40,9 +40,13 @@ jobs:
 
       # Everything the flake declares, including the treefmt and hook
       # checks and nivis' repo-files-current.
-      # `--no-pure-eval` is not optional: `devShells.default` is a devenv
-      # shell, devenv reads the working directory, and pure evaluation forbids
-      # that. Without the flag the check fails with "devenv was not able to
-      # determine the current directory", which reads like a repository error
-      # rather than a missing flag.
-      - run: nix flake check --no-pure-eval -L
+      - name: Install devenv
+        run: nix profile add nixpkgs#devenv
+
+      # There is no flake any more. Every check was a derivation, so building
+      # it IS running it.
+      - name: Build every output
+        run: devenv build
+
+      - name: Run the hooks
+        run: devenv shell prek -- run --all-files

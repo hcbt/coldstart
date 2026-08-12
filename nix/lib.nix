@@ -49,7 +49,6 @@ in
   # It is a file reference, so publishing it costs nothing — and a consumer that
   # does run flake-parts can still take the typed options instead of calling
   # `lib.mkImage` by hand.
-  flakeModules.default = import ./flake-module.nix;
 
   # The same options as `flakeModules.default`, for a project that runs devenv
   # rather than a flake. A PATH, not an imported module: devenv resolves its

@@ -20,24 +20,6 @@ let
   # that use these.
   coldstart = import ./lib.nix { inherit lib; };
 
-  # Evaluates a flake-parts flake the way a consumer would, without needing
-  # this flake's own outputs. `self` has to carry `inputs`: flake-parts
-  # reads `self.inputs` to build the `inputs'` per-system arg.
-  evalConsumerFlake =
-    {
-      inputs' ? { inherit (inputs) nixpkgs; },
-      module,
-    }:
-    let
-      allInputs = inputs' // {
-        self = {
-          inputs = allInputs;
-          outPath = ../.;
-        };
-      };
-    in
-    inputs.flake-parts.lib.mkFlake { inputs = allInputs; } module;
-
   # The smallest values that render at all. Everything else is a default,
   # which is the point: a chart whose defaults do not render is a chart
   # nobody can adopt incrementally.
@@ -403,108 +385,6 @@ in
         touch $out
       '';
 
-  # `flakeModules.default` is what the README leads with, and nothing else
-  # here evaluates it — `checks.image-evaluates` calls image.nix directly
-  # and bypasses the module entirely. Evaluation IS the test: a broken
-  # option or a mis-wired argument fails this derivation's instantiation.
-  flake-module =
-    let
-      evaluated = evalConsumerFlake {
-        module = {
-          systems = [ "x86_64-linux" ];
-          imports = [ coldstart.flakeModules.default ];
-          perSystem =
-            { pkgs, ... }:
-            {
-              coldstart.images = {
-                plain = { };
-                renamed.name = "custom-name";
-                configured = {
-                  packages = [ pkgs.hello ];
-                  extraPackages = [ pkgs.yq-go ];
-                  withNix = false;
-                  withCacert = false;
-                  withSkopeo = true;
-                  basePackages = [ ];
-                  nixSettings.substituters = [ "https://example.invalid" ];
-                  env.TMPDIR = null;
-                  entrypoint = [ "/bin/hello" ];
-                  command = [ "--greeting" ];
-                  exposedPorts."16261/udp" = { };
-                  workingDir = "/srv";
-                  extraConfig.StopSignal = "SIGINT";
-                  user = {
-                    uid = 1234;
-                    gid = 1234;
-                    home = "/home/app";
-                  };
-                  labels."org.opencontainers.image.source" = "https://github.com/OWNER/REPO";
-                };
-              };
-            };
-        };
-      };
-      built = evaluated.packages.x86_64-linux;
-      drv = p: builtins.unsafeDiscardStringContext p.drvPath;
-    in
-    pkgs.runCommand "flake-module" { } ''
-      fail() { echo "FAIL: $*" >&2; exit 1; }
-      eq() { [ "$1" = "$2" ] || fail "$3 (expected '$1', got '$2')"; }
-
-      eq "configured plain renamed" ${lib.escapeShellArg (toString (builtins.attrNames built))} \
-        "one package per declared image"
-
-      # The attribute name becomes the image name, and an explicit `name`
-      # wins over it.
-      eq "plain.tar.gz" ${lib.escapeShellArg built.plain.name} "attr name is the default image name"
-      eq "custom-name.tar.gz" ${lib.escapeShellArg built.renamed.name} "explicit name overrides the attr name"
-
-      # Options must actually reach mkImage: if the module dropped them
-      # on the floor these two would be the same derivation.
-      [ ${lib.escapeShellArg (drv built.plain)} != ${lib.escapeShellArg (drv built.configured)} ] \
-        || fail "option overrides did not change the derivation"
-
-      touch $out
-    '';
-
-  # examples/flake.nix is documentation, and documentation rots. Evaluate
-  # it against the working tree rather than the published flake: `import`
-  # of the file plus a locally built `coldstart` input means this tests
-  # the code in this commit, offline, with no fetch of github:hcbt/coldstart.
-  example-flake =
-    let
-      example = import ../examples/flake.nix;
-      exampleInputs = {
-        inherit (inputs) nixpkgs;
-        inherit (inputs) flake-parts;
-        inherit coldstart;
-      };
-      evaluated = example.outputs (
-        exampleInputs
-        // {
-          self = {
-            inputs = exampleInputs;
-            outPath = ../examples;
-          };
-        }
-      );
-      built = evaluated.packages.x86_64-linux;
-    in
-    pkgs.runCommand "example-flake" { } ''
-      fail() { echo "FAIL: $*" >&2; exit 1; }
-      eq() { [ "$1" = "$2" ] || fail "$3 (expected '$1', got '$2')"; }
-
-      # Every style the example documents must still evaluate.
-      eq "manifests my-server other-server" \
-        ${lib.escapeShellArg (toString (builtins.attrNames built))} \
-        "every package the example documents"
-
-      eq "my-server.tar.gz" ${lib.escapeShellArg built.my-server.name} "flakeModules style"
-      eq "other-server.tar.gz" ${lib.escapeShellArg built.other-server.name} "raw mkImage style"
-      eq "coldstart-manifests.yaml" ${lib.escapeShellArg built.manifests.name} "renderChart"
-
-      touch $out
-    '';
 }
 # Evaluating the image is the test: it proves the derivation and every
 # option path is well-formed, without pulling a workload closure into a
@@ -552,7 +432,7 @@ in
   # derivation's instantiation, which is the point.
   nixos-module =
     let
-      system = inputs.nixpkgs.lib.nixosSystem {
+      system = inputs.nixpkgs-project.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
           coldstart.nixosModules.default
