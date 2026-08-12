@@ -112,9 +112,10 @@ jobs:
         run: |
           set -eu
           if [ "${{ inputs.builder }}" = devenv ]; then
-            # Written to a file, not piped: devenv keeps writing progress to
-            # stdout after the JSON, so a reader that exits early closes the
-            # pipe and devenv panics with "failed printing to stdout".
+            # sed, not jq: this step runs outside the devenv shell, and jq is
+            # not on every runner image. sed is. (The broken-pipe panic that
+            # first forced a file here is fixed in devenv 2.2.1 — piping to jq
+            # works now — but the jq availability problem is unchanged.)
             devenv build "outputs.$PACKAGE" > build.json
             path=$(sed -n "s/.*\"outputs\.$PACKAGE\": *\"\([^\"]*\)\".*/\1/p" build.json)
             test -n "$path" || { echo "no store path for $PACKAGE" >&2; cat build.json >&2; exit 1; }
