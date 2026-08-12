@@ -2,8 +2,8 @@
 # `mkDevShell`, `flakeModules.git-hooks` and `flakeModules.treefmt`.
 #
 # There is no flake.nix. This file is the whole definition: the shell, the
-# hooks, the chart, the reference image and every check. It is loaded by `devenv.lib.mkShell` in flake.nix, so
-# the inputs come from there and there is no devenv.yaml.
+# hooks, the chart, the reference image and every check. Inputs come from
+# devenv.yaml.
 #
 # `nix develop` is impure: it PREPENDS the shell's packages to the ambient PATH
 # rather than replacing it, so any tool not named here falls through to a
