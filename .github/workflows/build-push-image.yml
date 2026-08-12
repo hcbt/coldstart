@@ -34,8 +34,14 @@ on:
         description: Target image without a tag, e.g. `ghcr.io/OWNER/NAME`.
         type: string
         required: true
+      builder:
+        description: |
+          How to build the image. `flake` runs `nix build`; `devenv` runs
+          `devenv build outputs.<package>` for a repository with no flake.
+        type: string
+        default: flake
       flake-ref:
-        description: Flake to build from.
+        description: Flake to build from. Ignored when `builder` is `devenv`.
         type: string
         default: "."
       system:
@@ -94,8 +100,29 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      # devenv is not on a GitHub-hosted runner, and installing it is only
+      # worth doing for a repository that has no flake to build from.
+      - name: Install devenv
+        if: inputs.builder == 'devenv' && inputs.install-nix
+        run: nix profile add nixpkgs#devenv
+
       - name: Build image
-        run: nix build '${{ inputs.flake-ref }}#packages.${{ inputs.system }}.${{ inputs.package }}' -L
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          set -eu
+          if [ "${{ inputs.builder }}" = devenv ]; then
+            # Written to a file, not piped: devenv keeps writing progress to
+            # stdout after the JSON, so a reader that exits early closes the
+            # pipe and devenv panics with "failed printing to stdout".
+            devenv build "outputs.$PACKAGE" > build.json
+            path=$(sed -n "s/.*\"outputs\.$PACKAGE\": *\"\([^\"]*\)\".*/\1/p" build.json)
+            test -n "$path" || { echo "no store path for $PACKAGE" >&2; cat build.json >&2; exit 1; }
+            # The push step reads `result`, which `nix build -o` used to create.
+            ln -sfn "$path" result
+          else
+            nix build '${{ inputs.flake-ref }}#packages.${{ inputs.system }}.'"$PACKAGE" -L
+          fi
 
       - name: Push
         env:
