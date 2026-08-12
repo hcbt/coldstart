@@ -83,6 +83,36 @@ let
       '';
 in
 {
+  # The devenv module, evaluated the way a devenv project evaluates it: bare
+  # `lib.evalModules` with the arguments devenv supplies, plus a stub `outputs`
+  # option standing in for devenv's own. Without this the module is published
+  # and never exercised, and an option added to image-options.nix could stop
+  # reaching it without anything saying so.
+  devenv-module =
+    let
+      evaluated = lib.evalModules {
+        specialArgs = { inherit pkgs lib; };
+        modules = [
+          { options.outputs = lib.mkOption { type = lib.types.attrsOf lib.types.package; }; }
+          (import ./devenv-module.nix)
+          {
+            coldstart.images.probe = {
+              name = "probe";
+              withNix = false;
+              entrypoint = [ "/bin/sh" ];
+            };
+          }
+        ];
+      };
+    in
+    pkgs.runCommand "devenv-module" { } ''
+      case ${lib.escapeShellArg evaluated.config.outputs.probe.name} in
+        probe*) ;;
+        *) echo "the devenv module produced an unexpected image name" >&2; exit 1 ;;
+      esac
+      touch $out
+    '';
+
   # helm's own schema/template validation, and proof the example values
   # documented in the README actually render.
   chart-lint =
