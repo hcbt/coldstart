@@ -48,5 +48,7 @@ jobs:
       - name: Build every output
         run: devenv build
 
+      # `devenv test` runs the git hooks and any `enterTest`. Safe here
+      # because this repository defines no processes.
       - name: Run the hooks
-        run: devenv shell prek -- run --all-files
+        run: devenv test
