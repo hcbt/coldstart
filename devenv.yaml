@@ -1,0 +1,20 @@
+# Every input this repository needs. There is no flake.nix: the chart, the
+# reference image and every check are devenv `outputs`.
+#
+# `nixpkgs` is devenv's own channel, so its Rust binaries come down prebuilt.
+# `nixpkgs-project` is what the image and the chart are BUILT from.
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+
+  nixpkgs-project:
+    url: github:NixOS/nixpkgs/nixpkgs-unstable
+
+  git-hooks:
+    url: github:cachix/git-hooks.nix
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+
+imports:
+  - ./nix/devenv-module.nix

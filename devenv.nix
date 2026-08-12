@@ -1,8 +1,8 @@
 # The dev shell, the formatters and the git hooks. Replaces nivis'
 # `mkDevShell`, `flakeModules.git-hooks` and `flakeModules.treefmt`.
 #
-# A module file rather than an inline block, so it can be diffed against the
-# other repos' copies. It is loaded by `devenv.lib.mkShell` in flake.nix, so
+# There is no flake.nix. This file is the whole definition: the shell, the
+# hooks, the chart, the reference image and every check. It is loaded by `devenv.lib.mkShell` in flake.nix, so
 # the inputs come from there and there is no devenv.yaml.
 #
 # `nix develop` is impure: it PREPENDS the shell's packages to the ambient PATH
@@ -11,12 +11,15 @@
 # utilities are pinned alongside the chart tooling.
 {
   pkgs,
-  # The package set the HOOK TOOLS come from. flake.nix passes devenv's set,
-  # so the shell and `checks.pre-commit` run the same formatter binaries even
-  # though the check itself is built from this flake's nixpkgs.
-  toolPkgs ? pkgs,
+  lib,
+  inputs,
   ...
 }:
+let
+  # The set the chart and the reference image are BUILT from. devenv rides its
+  # own channel so its Rust binaries stay cached; the two must not be confused.
+  projectPkgs = import inputs.nixpkgs-project { inherit (pkgs.stdenv.hostPlatform) system; };
+in
 {
   packages = [
     # Everyday utilities, so nothing resolves to a host binary.
@@ -45,9 +48,9 @@
   git-hooks.hooks = {
     # nixfmt is the RFC 166 formatter.
     nixfmt-rfc-style.enable = true;
-    nixfmt-rfc-style.package = toolPkgs.nixfmt;
+    nixfmt-rfc-style.package = pkgs.nixfmt;
     prettier.enable = true;
-    prettier.package = toolPkgs.prettier;
+    prettier.package = pkgs.prettier;
 
     # Correctness checks that are not formatting.
     check-merge-conflicts.enable = true;
@@ -74,4 +77,28 @@
   # `devenv:enterTest (no command)` and then reports "Tests passed", so an
   # assertion written there passes whether or not it ran. Measured on the
   # self-hosted runner, not assumed. The real assertions are in nix/checks.nix.
+
+  # --------------------------------------------------------- what it builds
+  #
+  # `packages` and `checks` both become `outputs`. A check here was always a
+  # derivation, so building one IS running it.
+  outputs =
+    import ./nix/packages.nix { } {
+      pkgs = projectPkgs;
+      inherit lib;
+    }
+    // import ./nix/checks.nix { inherit inputs; } {
+      pkgs = projectPkgs;
+      inherit lib;
+    };
+
+  # The reference image, through this repository's OWN devenv module — the same
+  # one consumers import. Dogfooding it is what keeps the module honest now
+  # that `checks.flake-module` and `checks.example-flake` are gone with the
+  # flake. An exported module with no consumer test is how the flake-parts one
+  # would have rotted.
+  coldstart.images.reference-app = {
+    name = "reference-app";
+    entrypoint = [ "/bin/sh" ];
+  };
 }
